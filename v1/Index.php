@@ -23,10 +23,12 @@ $app->post('/register', function() use ($app) {
 	$response = array();
 
 	// reading post params
-	$name = $app->request->post('name');
-	$email = $app->request->post('email');
-	$password = $app->request->post('password');
-
+	$name_str = $app->request->post('name');
+	$email_str = $app->request->post('email');
+	$password_str = $app->request->post('password');
+	$name = substr($name_str, 1, -1);
+	$email = substr($email_str, 1, -1);
+	$password = substr($password_str, 1, -1);
 	// validating email address
 	validateEmail($email);
 
@@ -56,11 +58,14 @@ $app->post('/register', function() use ($app) {
  */
 $app->post('/login', function() use ($app) {
 	// check for required params
-	verifyRequiredParams(array('email', 'password'));
+	
+	verifyRequiredParams(array('email','password'));
 
 	// reading post params
-	$email = $app->request()->post('email');
-	$password = $app->request()->post('password');
+	$email_str = $app->request()->post('email');
+	$password_str = $app->request()->post('password');
+	$email = substr($email_str, 1, -1);
+	$password = substr($password_str, 1, -1);
 	$response = array();
 
 	$db = new DbHandler();
@@ -70,12 +75,15 @@ $app->post('/login', function() use ($app) {
 		$user = $db->getUserByEmail($email);
 
 		if ($user != NULL) {
+// 			$response['error'] = false;
+// 			$response['message'] = "An error not occurred. ";
 			$response['idUser'] = $user['idUser'];
 			$response["error"] = false;
 			$response['name'] = $user['name'];
 			$response['email'] = $user['email'];
 			$response['apiKey'] = $user['apiKey'];
 			$response['createdAt'] = $user['created_at'];
+			
 		} else {
 			// unknown error occurred
 			$response['error'] = true;
@@ -83,8 +91,9 @@ $app->post('/login', function() use ($app) {
 		}
 	} else {
 		// user credentials are wrong
+		
 		$response['error'] = true;
-		$response['message'] = 'Login failed. Incorrect credentials';
+		$response['message'] = "Login failed. Incorrect credentials $email $password";
 	}
 
 	echoRespnse(200, $response);
@@ -118,7 +127,7 @@ function authenticate(\Slim\Route $route) {
 			// get user primary key id
 			$user = $db->getUserId($api_key);
 			if ($user != NULL)
-				$user_id = $user["id"];
+				$user_id = $user["idUser"];
 		}
 	} else {
 		// api key is missing in header
@@ -130,7 +139,7 @@ function authenticate(\Slim\Route $route) {
 }
 
 /**
- * Creating new task in db
+ * Creating new plant in db
  * method POST
  * params - name
  * url - /tasks/
@@ -160,35 +169,188 @@ $app->post('/plant', 'authenticate', function() use ($app) {
 	echoRespnse(201, $response);
 });
 
-/**
- * Listing all tasks of particual user
- * method GET
- * url /tasks
- */
-$app->get('/plant', 'authenticate', function() {
+	/**
+	 * Uploading image file
+	 * method POST
+	 * url - /image/
+	 */
+$app->post('/image', 'authenticate', function() {
+	// Path to move uploaded files
+	$target_path = "../images/";
 	global $user_id;
+	// array for final json respone
+	$response = array();
+	
+// 	// getting server ip address
+// 	$server_ip = gethostbyname(gethostname());
+	
+// 	// final file url that is being uploaded
+// 	$file_upload_url = 'http://192.168.0.101:8081/' . $target_path;
+	
+	
+	if (isset($_FILES['uploaded_file']['name'])) {
+		$image_name = basename($_FILES['uploaded_file']['name']);
+		$target_path = $target_path . $image_name;
+	
+		// reading other post parameters
+		$plant_id = $_POST['idPlant'];
+		
+// 		$website = isset($_POST['website']) ? $_POST['website'] : '';
+	
+		$response['file_name'] = basename($_FILES['uploaded_file']['name']);
+		// $response['email'] = $email;
+		// $response['website'] = $website;
+	
+		try {
+			// Throws exception incase file is not being moved
+			if (!move_uploaded_file($_FILES['uploaded_file']['tmp_name'], $target_path)) {
+				// make error flag true
+				$response['error'] = true;
+				$response['message'] = 'Could not move the file!';
+			}
+				$db = new DbHandler();
+				$result = $db->updatePlantImage($image_name, $user_id, $plant_id);
+				// File successfully uploaded
+				if($result){
+					$response['message'] = "File uploaded successfully! plantid=$plant_id user=$user_id";
+					$response['error'] = false;
+					$response['file_path'] = basename($_FILES['uploaded_file']['name']);
+				}
+				else{
+					$response['message'] = "File uploaded successfully but not updated in DB! plantid=$plant_id user=$user_id";
+					$response['error'] = true;
+				}
+				
+			
+			
+		} catch (Exception $e) {
+			// Exception occurred. Make error flag true
+			$response['error'] = true;
+			$response['message'] = $e->getMessage();
+		}
+	} else {
+		// File parameter is missing
+		$response['error'] = true;
+		$response['message'] = 'Not received any file!F';
+	}
+	// Echo final json response to client
+	echo json_encode($response);
+});
+	/**
+	 * Listing all plants
+	 * method GET
+	 * url /plant
+	 */
+$app->get('/plant', 'authenticate', function() {
+	
 	$response = array();
 	$db = new DbHandler();
 
 	// fetching all user tasks
-	$result = $db->getAllUserTasks($user_id);
+	$result = $db->getAllPlants();
 
 	$response["error"] = false;
-	$response["tasks"] = array();
+	$response["plants"] = array();
 
-	// looping through result and preparing tasks array
-	while ($task = $result->fetch_assoc()) {
+	// looping through result and preparing plants array
+	while ($plant = $result->fetch_assoc()) {
 		$tmp = array();
-		$tmp["id"] = $task["id"];
-		$tmp["task"] = $task["task"];
-		$tmp["status"] = $task["status"];
-		$tmp["createdAt"] = $task["created_at"];
-		array_push($response["tasks"], $tmp);
+		$tmp["idPlant"] = $plant["idPlant"];
+		$tmp["name"] = $plant["name"];
+		$tmp["latinName"] = $plant["latinName"];
+		$tmp["description"] = $plant["description"];
+		array_push($response["plants"], $tmp);
 	}
 
 	echoRespnse(200, $response);
 });
+/**
+ * Listing all plants of particual user
+ * method GET
+ * url /user_plants
+ */
+$app->get('/user_plants', 'authenticate', function() {
+	global $user_id;
+	$response = array();
+	$db = new DbHandler();
 
+	// fetching all user plants
+	$result = $db->getAllUserPlants($user_id);
+	if ($result != NULL) {
+		$response["error"] = false;
+		$response["plants"] = array();
+		
+		// looping through result and preparing tasks array
+		while ($plant = $result->fetch_assoc()) {
+			$tmp = array();
+			$tmp["idPlant"] = $plant["idPlant"];
+			$tmp["name"] = $plant["name"];
+			$tmp["latinName"] = $plant["latinName"];
+			$tmp["description"] = $plant["description"];
+			$tmp["imageAdress"] = $plant["imageAdress"];
+			$tmp["location"] = $plant["location"];
+			array_push($response["plants"], $tmp);
+			
+		}
+		echoRespnse(200, $response);
+	} else {
+		$response["error"] = true;
+		$response["message"] = "The requested resource doesn't exists";
+		echoRespnse(200, $response);
+	}
+
+	
+});
+	$app->post('/user_plants', 'authenticate', function() use ($app) {
+		// check for required params
+		verifyRequiredParams(array('idPlant'));
+	
+		$response = array();
+		global $user_id;
+		$idPlant = $app->request->post('idPlant');
+
+		$db = new DbHandler();
+	
+		// creating new task
+		$created = $db->createUserPlant($idPlant, $user_id);
+	
+		if ($created) {
+			$response["error"] = false;
+			$response["message"] = "Plant created successfully";
+			$response["idPlant"] = $idPlant;
+		} else {
+			$response["error"] = true;
+			$response["message"] = "Failed to create plant. Please try again";
+		}
+		echoRespnse(201, $response);
+	});
+	/**
+	 * Listing single plant
+	 * method GET
+	 * url /tasks/:id
+
+	 */
+	$app->get('/plant/:id', 'authenticate', function($idPlant) {
+		
+		$response = array();
+		$db = new DbHandler();
+	
+		// fetch task
+		$result = $db->getPlant($idPlant);
+	
+		if ($result != NULL) {
+			$response["error"] = false;
+			$response["idPlant"] = $result["idPlant"];
+			$response["name"] = $result["name"];
+			$response["latinName"] = $result["latinName"];
+			$response["description"] = $result["description"];
+			echoRespnse(200, $response);
+		} else {
+			$response["error"] = true;
+			$response["message"] = "The requested resource doesn't exists";
+			echoRespnse(404, $response);
+		}
+	});
 /**
  * Listing single task of particual user
 * method GET

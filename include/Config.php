@@ -5,7 +5,7 @@
 define('DB_USERNAME', 'root');
 define('DB_PASSWORD', '');
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'plants_database');
+define('DB_NAME', 'plant_app');
 
 define('USER_CREATED_SUCCESSFULLY', 0);
 define('USER_CREATE_FAILED', 1);

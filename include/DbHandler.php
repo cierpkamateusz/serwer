@@ -79,7 +79,7 @@ class DbHandler {
  
         $stmt->store_result();
  
-        if ($stmt->num_rows > 0) {
+        if ($stmt->num_rows() > 0) {
             // Found user with the email
             // Now verify the password
  
@@ -153,7 +153,7 @@ class DbHandler {
      * Fetching user id by api key
      * @param String $api_key user api key
      */
-    public function getUserId($api_key) {
+    public function getUserId($apiKey) {
         $stmt = $this->conn->prepare("SELECT idUser FROM user WHERE apiKey = ?");
         $stmt->bind_param("s", $apiKey);
         if ($stmt->execute()) {
@@ -231,15 +231,30 @@ class DbHandler {
     	$stmt->close();
     
     	if ($result) {
-    		// task created successfully
-    		
+    		// plant created successfully
     		return $this->conn->insert_id;
     		} 
     	else {
-    		// task failed to create
+    		// plant failed to create
     		return NULL;
     	}
     }
+    /**
+     * Fetching single plant
+     * @param String $idPlant id of the plant
+     */
+    public function getPlant($idPlant) {
+    	$stmt = $this->conn->prepare("SELECT idPlant, name, latinName, description from plant WHERE idPlant = ? ");
+    	$stmt->bind_param("i", $idPlant);
+    	if ($stmt->execute()) {
+    		$task = $stmt->get_result()->fetch_assoc();
+    		$stmt->close();
+    		return $task;
+    	} else {
+    		return NULL;
+    	}
+    }
+    
     /**
      * Fetching single task
      * @param String $task_id id of the task
@@ -255,7 +270,48 @@ class DbHandler {
             return NULL;
         }
     }
- 
+    /**
+     * Fetching all plants
+     */
+    public function getAllPlants() {
+    	$stmt = $this->conn->prepare("SELECT * FROM plant");
+    	$stmt->execute();
+    	$plants = $stmt->get_result();
+    	$stmt->close();
+    	return $plants;
+    }
+    /**
+     * Fetching all user plants
+     * @param String $idUser id of the user
+     */
+    public function getAllUserPlants($idUser) {
+    	$stmt = $this->conn->prepare("SELECT p.*, imageAdress, location FROM plant p, user_plants up WHERE p.idPlant = up.idPlant AND up.idUser = ?");
+    	$stmt->bind_param("i", $idUser);
+    	$stmt->execute();
+    	$plants = $stmt->get_result();
+    	$stmt->close();
+    	return $plants;
+    }
+    /**
+     * Creating new user plant
+     * @param String $idPlant id of new plant
+     * @param String $idUser id of user
+     */
+    public function createUserPlant($idPlant, $idUser) {
+    	$stmt = $this->conn->prepare("INSERT INTO user_plants(idPlant, idUser) VALUES(?,?)");
+    	$stmt->bind_param("ss", $idPlant, $idUser);
+    	$result = $stmt->execute();
+    	$stmt->close();
+    
+    	if ($result) {
+    		// plant created successfully
+    		return TRUE;
+    	}
+    	else {
+    		// plant failed to create
+    		return NULL;
+    	}
+    }
     /**
      * Fetching all user tasks
      * @param String $user_id id of the user
@@ -283,6 +339,21 @@ class DbHandler {
         $stmt->close();
         return $num_affected_rows > 0;
     }
+    /**
+     * Updating imageAdress
+     * @param String $imageAdress name of the image
+     * @param String $user_id 
+     * @param String $plant_id
+     */
+    public function updatePlantImage($imageAdress, $user_id, $plant_id) {
+    	$stmt = $this->conn->prepare("UPDATE user_plants set imageAdress = ? WHERE idUser = ? AND idPlant = ?");
+    	$stmt->bind_param("sii", $imageAdress, $user_id, $plant_id);
+    	$stmt->execute();
+    	$num_affected_rows = $stmt->affected_rows;
+    	$stmt->close();
+    	return $num_affected_rows > 0;
+    }
+    
  
     /**
      * Deleting a task
