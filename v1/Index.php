@@ -10,6 +10,45 @@ $app = new \Slim\Slim();
 // User id from db - Global Variable
 $user_id = NULL;
  
+
+/**
+ * Adding Middle Layer to authenticate every request
+ * Checking if the request has valid api key in the 'Authorization' header
+ */
+function authenticate(\Slim\Route $route) {
+	// Getting request headers
+	$headers = apache_request_headers();
+	$response = array();
+	$app = \Slim\Slim::getInstance();
+
+	// Verifying Authorization Header
+	if (isset($headers['authorization'])) {
+		$db = new DbHandler();
+
+		// get the api key
+		$api_key = $headers['authorization'];
+		// validating api key
+		if (!$db->isValidApiKey($api_key)) {
+			// api key is not present in users table
+			$response["error"] = true;
+			$response["message"] = "Access Denied. Invalid Api key";
+			echoRespnse(401, $response);
+			$app->stop();
+		} else {
+			global $user_id;
+			// get user primary key id
+			$user = $db->getUserId($api_key);
+			if ($user != NULL)
+				$user_id = $user["idUser"];
+		}
+	} else {
+		// api key is missing in header
+		$response["error"] = true;
+		$response["message"] = "Api key is misssing";
+		echoRespnse(400, $response);
+		$app->stop();
+	}
+}
 /**
  * User Registration
  * url - /register
@@ -99,44 +138,7 @@ $app->post('/login', function() use ($app) {
 	echoRespnse(200, $response);
 });
 
-/**
- * Adding Middle Layer to authenticate every request
- * Checking if the request has valid api key in the 'Authorization' header
- */
-function authenticate(\Slim\Route $route) {
-	// Getting request headers
-	$headers = apache_request_headers();
-	$response = array();
-	$app = \Slim\Slim::getInstance();
 
-	// Verifying Authorization Header
-	if (isset($headers['authorization'])) {
-		$db = new DbHandler();
-
-		// get the api key
-		$api_key = $headers['authorization'];
-		// validating api key
-		if (!$db->isValidApiKey($api_key)) {
-			// api key is not present in users table
-			$response["error"] = true;
-			$response["message"] = "Access Denied. Invalid Api key";
-			echoRespnse(401, $response);
-			$app->stop();
-		} else {
-			global $user_id;
-			// get user primary key id
-			$user = $db->getUserId($api_key);
-			if ($user != NULL)
-				$user_id = $user["idUser"];
-		}
-	} else {
-		// api key is missing in header
-		$response["error"] = true;
-		$response["message"] = "Api key is misssing";
-		echoRespnse(400, $response);
-		$app->stop();
-	}
-}
 
 /**
  * Creating new plant in db
@@ -177,7 +179,7 @@ $app->post('/plant', 'authenticate', function() use ($app) {
 $app->post('/image', 'authenticate', function() {
 	// Path to move uploaded files
 	$target_path = "../images/";
-	global $user_id;
+	$resized_path= "../images/resized/";
 	// array for final json respone
 	$response = array();
 	
@@ -187,61 +189,103 @@ $app->post('/image', 'authenticate', function() {
 // 	// final file url that is being uploaded
 // 	$file_upload_url = 'http://192.168.0.101:8081/' . $target_path;
 	
-	
-	if (isset($_FILES['uploaded_file']['name'])) {
-		$image_name = basename($_FILES['uploaded_file']['name']);
-		$target_path = $target_path . $image_name;
-	
-		// reading other post parameters
-		$plant_id = $_POST['idPlant'];
-		
-// 		$website = isset($_POST['website']) ? $_POST['website'] : '';
-	
-		$response['file_name'] = basename($_FILES['uploaded_file']['name']);
-		// $response['email'] = $email;
-		// $response['website'] = $website;
-	
-		try {
-			// Throws exception incase file is not being moved
-			if (!move_uploaded_file($_FILES['uploaded_file']['tmp_name'], $target_path)) {
-				// make error flag true
-				$response['error'] = true;
-				$response['message'] = 'Could not move the file!';
-			}
-				$db = new DbHandler();
-				$result = $db->updatePlantImage($image_name, $user_id, $plant_id);
-				// File successfully uploaded
-				if($result){
-					$response['message'] = "File uploaded successfully! plantid=$plant_id user=$user_id";
-					$response['error'] = false;
-					$response['file_path'] = basename($_FILES['uploaded_file']['name']);
-				}
-				else{
-					$response['message'] = "File uploaded successfully but not updated in DB! plantid=$plant_id user=$user_id";
-					$response['error'] = true;
-				}
-				
-			
-			
-		} catch (Exception $e) {
-			// Exception occurred. Make error flag true
-			$response['error'] = true;
-			$response['message'] = $e->getMessage();
-		}
-	} else {
-		// File parameter is missing
-		$response['error'] = true;
-		$response['message'] = 'Not received any file!F';
+	if($_FILES['uploaded_file']['error']!=UPLOAD_ERR_OK){
+		$response['error']=true;
+		$response['message']='blad'.$_FILES['uploaded_file']['error'];
 	}
-	// Echo final json response to client
+	else {
+		if (isset($_FILES['uploaded_file']['name'])) {
+			$image_name = basename($_FILES['uploaded_file']['name']);
+			$type = $_FILES['uploaded_file']['type'];
+			$target_path = $target_path . $image_name;
+			$resized_target_path = $resized_path . $image_name;
+			$tmp_name = $_FILES['uploaded_file']['tmp_name'];
+			$size2 = getimagesize($tmp_name);
+			$width = $size2[0];
+			$height = $size2[1];
+			
+		
+			// reading other post parameters
+			$plant_id = $_POST['idUserPlant'];
+			
+	// 		$website = isset($_POST['website']) ? $_POST['website'] : '';
+		
+			$response['file_name'] = basename($_FILES['uploaded_file']['name']);
+			// $response['email'] = $email;
+			// $response['website'] = $website;
+		
+			try {
+				// Throws exception incase file is not being moved
+				if (!move_uploaded_file($_FILES['uploaded_file']['tmp_name'], $target_path)) {
+					// make error flag true
+					$response['error'] = true;
+					$response['message'] = 'Could not move the file!';
+				}
+					$db = new DbHandler();
+					$result = $db->updatePlantImage($image_name, $plant_id);
+					// File successfully uploaded
+					if($result){
+						$response['message'] = "File uploaded successfully! plantid=$plant_id";
+						$response['error'] = false;
+						$response['file_path'] = basename($_FILES['uploaded_file']['name']);
+						
+					}
+					else{
+						$response['message'] = "File uploaded successfully but not updated in DB! plantid=$plant_id user=$user_id";
+						$response['error'] = true;
+					}
+					
+				
+				
+			} catch (Exception $e) {
+				// Exception occurred. Make error flag true
+				$response['error'] = true;
+				$response['message'] = $e->getMessage();
+			}
+		} else {
+			// File parameter is missing
+			$response['error'] = true;
+			$response['message'] = 'Not received any file!F';
+		}
+		// Echo final json response to client
+		
+		if($width == $height){
+			$newwidth = 200;
+			$newheight = 200;
+		
+		}
+		if($width < $height){
+			$newwidth = 200;
+			$ratio = $newwidth/$width;
+			$newheight = round($height*$ratio);
+		}
+		if($width > $height){
+			$newheight = 200;
+			$ratio = $newheight/$height;
+			$newwidth = round($width*$ratio);
+		}
+		$response["message"] = $response["message"].$type;
+		switch($type){
+			case 'image/jpeg':
+				$img = imagecreatefromjpeg($target_path);
+				$resized_image = imagecreatetruecolor($newwidth, $newheight);
+				imagecopyresized($resized_image, $img, 0,0,0,0,$newwidth, $newheight, $width, $height);
+				imagejpeg($resized_image, $resized_target_path);
+				break;
+					
+		}
+	}
 	echo json_encode($response);
+	
+	
+	
 });
 	/**
 	 * Listing all plants
 	 * method GET
 	 * url /plant
 	 */
-$app->get('/plant', 'authenticate', function() {
+$app->get('/plant','authenticate', function() {
 	
 	$response = array();
 	$db = new DbHandler();
@@ -260,6 +304,7 @@ $app->get('/plant', 'authenticate', function() {
 		$tmp["latinName"] = $plant["latinName"];
 		$tmp["description"] = $plant["description"];
 		array_push($response["plants"], $tmp);
+
 	}
 
 	echoRespnse(200, $response);
@@ -276,6 +321,7 @@ $app->get('/user_plants', 'authenticate', function() {
 
 	// fetching all user plants
 	$result = $db->getAllUserPlants($user_id);
+	
 	if ($result != NULL) {
 		$response["error"] = false;
 		$response["plants"] = array();
@@ -284,11 +330,13 @@ $app->get('/user_plants', 'authenticate', function() {
 		while ($plant = $result->fetch_assoc()) {
 			$tmp = array();
 			$tmp["idPlant"] = $plant["idPlant"];
+			$tmp["idUserPlant"] = $plant["idUserPlant"];
 			$tmp["name"] = $plant["name"];
 			$tmp["latinName"] = $plant["latinName"];
 			$tmp["description"] = $plant["description"];
 			$tmp["imageAdress"] = $plant["imageAdress"];
 			$tmp["location"] = $plant["location"];
+			$tmp["created_at"] = $plant["created_at"];
 			array_push($response["plants"], $tmp);
 			
 		}
@@ -298,79 +346,149 @@ $app->get('/user_plants', 'authenticate', function() {
 		$response["message"] = "The requested resource doesn't exists";
 		echoRespnse(200, $response);
 	}
-
-	
 });
-	$app->post('/user_plants', 'authenticate', function() use ($app) {
-		// check for required params
-		verifyRequiredParams(array('idPlant'));
-	
-		$response = array();
+	$app->get('/user_reminds', 'authenticate', function() {
 		global $user_id;
-		$idPlant = $app->request->post('idPlant');
-
-		$db = new DbHandler();
-	
-		// creating new task
-		$created = $db->createUserPlant($idPlant, $user_id);
-	
-		if ($created) {
-			$response["error"] = false;
-			$response["message"] = "Plant created successfully";
-			$response["idPlant"] = $idPlant;
-		} else {
-			$response["error"] = true;
-			$response["message"] = "Failed to create plant. Please try again";
-		}
-		echoRespnse(201, $response);
-	});
-	/**
-	 * Listing single plant
-	 * method GET
-	 * url /tasks/:id
-
-	 */
-	$app->get('/plant/:id', 'authenticate', function($idPlant) {
-		
 		$response = array();
 		$db = new DbHandler();
 	
-		// fetch task
-		$result = $db->getPlant($idPlant);
+		// fetching all user plants
+		$result = $db->getAllUserReminds($user_id);
 	
 		if ($result != NULL) {
-			$response["error"] = false;
-			$response["idPlant"] = $result["idPlant"];
-			$response["name"] = $result["name"];
-			$response["latinName"] = $result["latinName"];
-			$response["description"] = $result["description"];
+// 			$response["error"] = false;
+			
+	
+			// looping through result and preparing tasks array
+			while ($plant = $result->fetch_assoc()) {
+				$tmp = array();
+				$tmp["idRemind"] = $plant["idRemind"];
+				$tmp["idUserPlant"] = $plant["idUserPlant"];
+				$tmp["date"] = $plant["date"];
+				$tmp["latinName"] = $plant["latinName"];
+				$tmp["plantName"] = $plant["plantName"];
+				$tmp["name"] = $plant["name"];
+				$tmp["imageAdress"] = $plant["imageAdress"];
+				$tmp["location"] = $plant["location"];
+				$tmp["type"] = $plant["type"];
+				array_push($response, $tmp);
+					
+			}
 			echoRespnse(200, $response);
 		} else {
 			$response["error"] = true;
 			$response["message"] = "The requested resource doesn't exists";
-			echoRespnse(404, $response);
+			echoRespnse(200, $response);
 		}
-	});
-/**
- * Listing single task of particual user
-* method GET
-* url /tasks/:id
-* Will return 404 if the task doesn't belongs to user
-*/
-$app->get('/tasks/:id', 'authenticate', function($task_id) {
+});
+$app->get('/user_reminds/:id', 'authenticate', function($idUserPlant) {
 	global $user_id;
 	$response = array();
 	$db = new DbHandler();
 
+	// fetching all user plants
+	$result = $db->getUserPlantReminds($user_id, $idUserPlant);
+
+	if ($result != NULL) {
+		// 			$response["error"] = false;
+			
+
+		// looping through result and preparing tasks array
+		while ($plant = $result->fetch_assoc()) {
+			$tmp = array();
+			$tmp["idRemind"] = $plant["idRemind"];
+			$tmp["idUserPlant"] = $plant["idUserPlant"];
+			$tmp["date"] = $plant["date"];
+			$tmp["latinName"] = $plant["latinName"];
+			$tmp["plantName"] = $plant["plantName"];
+			$tmp["name"] = $plant["name"];
+			$tmp["imageAdress"] = $plant["imageAdress"];
+			$tmp["location"] = $plant["location"];
+			$tmp["type"] = $plant["type"];
+			array_push($response, $tmp);
+				
+		}
+		echoRespnse(200, $response);
+	} else {
+		$response["error"] = true;
+		$response["message"] = "The requested resource doesn't exists";
+		echoRespnse(200, $response);
+	}
+});
+$app->post('/user_plants', 'authenticate', function() use ($app) {
+	// check for required params
+	verifyRequiredParams(array('idPlant'));
+
+	$response = array();
+	global $user_id;
+	$idPlant = $app->request->post('idPlant');
+
+	$db = new DbHandler();
+
+	// creating new task
+	$created = $db->createUserPlant($idPlant, $user_id);
+
+	if ($created) {
+		$response["error"] = false;
+		$response["message"] = "Plant created successfully";
+		$response["idPlant"] = $idPlant;
+	} else {
+		$response["error"] = true;
+		$response["message"] = "Failed to create plant. Please try again";
+	}
+	echoRespnse(201, $response);
+});
+$app->post('/user_reminds','authenticate', function() use ($app) {
+	// check for required params
+	verifyRequiredParams(array('idUserPlant','idAction','date', 'type'));
+
+	$response = array();
+	
+	$idUserPlant = $app->request->post('idUserPlant');
+	$idAction = $app->request->post('idAction');
+	$date = $app->request->post('date');
+	$type = $app->request->post('type');
+	
+	
+	
+	$db = new DbHandler();
+
+	
+// creating new task
+	$created = $db->addNewRemind($idUserPlant, $idAction, $date, $type);
+
+	if ($created) {
+		$response["error"] = false;
+		$response["message"] = "Plant created successfully";
+		
+	} else {
+		$response["error"] = true;
+		$response["message"] = "Failed to create plant. Please try again";
+	}
+	
+	
+	echoRespnse(201, $response);
+});
+/**
+ * Listing single plant
+ * method GET
+ * url /tasks/:id
+
+ */
+$app->get('/plant/:id', 'authenticate', function($idPlant) {
+	
+	$response = array();
+	$db = new DbHandler();
+
 	// fetch task
-	$result = $db->getTask($task_id, $user_id);
+	$result = $db->getPlant($idPlant);
 
 	if ($result != NULL) {
 		$response["error"] = false;
-		$response["id"] = $result["id"];
-		$response["task"] = $result["task"];
-		$response["status"] = $result["status"];
-		$response["createdAt"] = $result["created_at"];
+		$response["idPlant"] = $result["idPlant"];
+		$response["name"] = $result["name"];
+		$response["latinName"] = $result["latinName"];
+		$response["description"] = $result["description"];
 		echoRespnse(200, $response);
 	} else {
 		$response["error"] = true;
@@ -378,60 +496,146 @@ $app->get('/tasks/:id', 'authenticate', function($task_id) {
 		echoRespnse(404, $response);
 	}
 });
+	
 
 /**
- * Updating existing task
- * method PUT
- * params task, status
- * url - /tasks/:id
+ * Listing single action of particual user
+ * method GET
+ * url /action/:id
  */
-$app->put('/tasks/:id', 'authenticate', function($task_id) use($app) {
+$app->get('/action',  function() {
+global $user_id;
+	$response = array();
+	$db = new DbHandler();
+
+	// fetching all user plants
+	$result = $db->getAction();
+
+	if ($result != NULL) {
+
+		
+
+		// looping through result and preparing tasks array
+		while ($plant = $result->fetch_assoc()) {
+			$tmp = array();
+			$tmp["idAction"] = $plant["idAction"];
+			$tmp["name"] = $plant["name"];
+			
+			array_push($response, $tmp);
+				
+		}
+		echoRespnse(200, $response);
+	} else {
+		$response["error"] = true;
+		$response["message"] = "The requested resource doesn't exists";
+		echoRespnse(200, $response);
+	}
+});
+/**
+ * Updating existing remind
+ * method PUT
+ * params idRemind, data
+ * url - /user_reminds/:id
+ */
+$app->put('/user_reminds/:id', 'authenticate', function($idRemind) use($app) {
 	// check for required params
-	verifyRequiredParams(array('task', 'status'));
+	verifyRequiredParams(array('date'));
 
-	global $user_id;
-	$task = $app->request->put('task');
-	$status = $app->request->put('status');
-
+	$data = $app->request->put('date');
+	
+	
 	$db = new DbHandler();
 	$response = array();
 
-	// updating task
-	$result = $db->updateTask($user_id, $task_id, $task, $status);
+	// updating remind
+	$result = $db->updateRemind($idRemind, $data);
 	if ($result) {
-		// task updated successfully
+		// remind updated successfully
 		$response["error"] = false;
-		$response["message"] = "Task updated successfully";
+		$response["message"] = "Remind updated successfully";
 	} else {
-		// task failed to update
+		// remind failed to update
 		$response["error"] = true;
-		$response["message"] = "Task failed to update. Please try again!";
+		$response["message"] = "Remind failed to update. Please try again!$data $idRemind";
+	}
+	echoRespnse(200, $response);
+});
+/**
+ * Updating existing user_plant
+ * method PUT
+ * params idUserPlant, location
+ * url - /user_plants/:id
+ */
+$app->put('/user_plants/:id', 'authenticate', function($idUserPlant) use($app) {
+	// check for required params
+	verifyRequiredParams(array('location'));
+
+	$location = $app->request->put('location');
+// 	$location = "Korytarz";
+	$db = new DbHandler();
+	$response = array();
+
+
+	$result = $db->updateLocation($idUserPlant, $location);
+	if ($result) {
+		// remind updated successfully
+		$response["error"] = false;
+		$response["message"] = "updated successfully";
+	} else {
+		// remind failed to update
+		$response["error"] = true;
+		$response["message"] = "failed to update. Please try again!";
 	}
 	echoRespnse(200, $response);
 });
 
+	
+
 /**
- * Deleting task. Users can delete only their tasks
+ * Deleting remind. Users can delete only their reminds
  * method DELETE
- * url /tasks
+ * url /user_reminds/:id
  */
-$app->delete('/tasks/:id', 'authenticate', function($task_id) use($app) {
-	global $user_id;
+$app->delete('/user_reminds/:id', 'authenticate', function($id) use($app) {
 
 	$db = new DbHandler();
 	$response = array();
-	$result = $db->deleteTask($user_id, $task_id);
+	$result = $db->deleteRemind($id);
 	if ($result) {
 		// task deleted successfully
 		$response["error"] = false;
-		$response["message"] = "Task deleted succesfully";
+		$response["message"] = "Remind deleted succesfully";
 	} else {
 		// task failed to delete
 		$response["error"] = true;
-		$response["message"] = "Task failed to delete. Please try again!";
+		$response["message"] = "Remind failed to delete. Please try again!";
 	}
 	echoRespnse(200, $response);
 });
+
+/**
+ * Deleting userplant. 
+ * method DELETE
+ * url /user_plants
+ */
+$app->delete('/user_plants/:id', 'authenticate', function($id) use($app) {
+	
+
+	$db = new DbHandler();
+	$response = array();
+	$result = $db->deleteUserPlant($id);
+	if ($result) {
+		// Plant deleted successfully
+		$response["error"] = false;
+		$response["message"] = "Plant deleted succesfully";
+	} else {
+		// Plant failed to delete
+		$response["error"] = true;
+		$response["message"] = "Plant failed to delete. Please try again!";
+	}
+	echoRespnse(200, $response);
+});
+
 
 /**
  * Verifying required params posted or not
@@ -490,9 +694,11 @@ function echoRespnse($status_code, $response) {
  
     // setting response content type to json
     $app->contentType('application/json');
- 
+    $app->language('pl');
+    $app->charset('utf-8');
+    
     echo json_encode($response);
 }
- 
+
 $app->run();
 ?>

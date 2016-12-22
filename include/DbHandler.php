@@ -254,14 +254,28 @@ class DbHandler {
     		return NULL;
     	}
     }
-    
     /**
      * Fetching single task
      * @param String $task_id id of the task
      */
-    public function getTask($task_id, $user_id) {
-        $stmt = $this->conn->prepare("SELECT t.id, t.task, t.status, t.created_at from tasks t, user_tasks ut WHERE t.id = ? AND ut.task_id = t.id AND ut.user_id = ?");
-        $stmt->bind_param("ii", $task_id, $user_id);
+    public function getAction() {
+    	$stmt = $this->conn->prepare("SELECT * FROM action_type");
+    	 
+    	if ($stmt->execute()) {
+    		$action = $stmt->get_result();
+    		$stmt->close();
+    		return $action;
+    	} else {
+    		return NULL;
+    	}
+    }
+    /**
+     * Fetching single task
+     * @param String $task_id id of the task
+     */
+    public function getTask() {
+        $stmt = $this->conn->prepare("SELECT * FROM table1");
+       
         if ($stmt->execute()) {
             $task = $stmt->get_result()->fetch_assoc();
             $stmt->close();
@@ -274,6 +288,7 @@ class DbHandler {
      * Fetching all plants
      */
     public function getAllPlants() {
+    	
     	$stmt = $this->conn->prepare("SELECT * FROM plant");
     	$stmt->execute();
     	$plants = $stmt->get_result();
@@ -285,12 +300,77 @@ class DbHandler {
      * @param String $idUser id of the user
      */
     public function getAllUserPlants($idUser) {
-    	$stmt = $this->conn->prepare("SELECT p.*, imageAdress, location FROM plant p, user_plants up WHERE p.idPlant = up.idPlant AND up.idUser = ?");
+    	$stmt = $this->conn->prepare("SELECT p.*, idUserPlant, imageAdress, location, created_at FROM plant p, user_plants up WHERE p.idPlant = up.idPlant AND up.idUser = ?");
     	$stmt->bind_param("i", $idUser);
     	$stmt->execute();
     	$plants = $stmt->get_result();
     	$stmt->close();
     	return $plants;
+    }
+    /**
+     * Fetching all user reminds
+     * @param String $idUser id of the user
+     */
+    public function getAllUserReminds($idUser) {
+    	$stmt = $this->conn->prepare("SELECT r.idRemind, r.date, r.type, up.idUserPlant, up.imageAdress, up.location, p.name as plantName, p.latinName, a.name
+										FROM remind r 
+										JOIN user_plants up 
+										ON r.idUserPlant = up.idUserPlant
+										JOIN plant p
+										ON up.idPlant = p.idPlant
+										JOIN action_type a
+										ON r.idAction = a.idAction
+    									WHERE up.idUser = ?
+    									ORDER BY r.date");
+    	$stmt->bind_param("i", $idUser);
+    	$stmt->execute();
+    	$reminds = $stmt->get_result();
+    	$stmt->close();
+    	return $reminds;
+    }
+    /**
+     * Fetching all user reminds
+     * @param String $idUser id of the user
+     */
+    public function getUserPlantReminds($idUser, $idUserPlant) {
+    	$stmt = $this->conn->prepare("SELECT r.idRemind, r.date, r.type, up.idUserPlant, up.imageAdress, up.location, p.name as plantName, p.latinName, a.name
+										FROM remind r
+										JOIN user_plants up
+										ON r.idUserPlant = up.idUserPlant
+										JOIN plant p
+										ON up.idPlant = p.idPlant
+										JOIN action_type a
+										ON r.idAction = a.idAction
+    									WHERE up.idUser = ?
+    									AND up.idUserPlant = ?");
+    	$stmt->bind_param("ii", $idUser, $idUserPlant);
+    	$stmt->execute();
+    	$reminds = $stmt->get_result();
+    	$stmt->close();
+    	return $reminds;
+    }
+    /**
+     * adding potrawa to zamowienie
+     */
+    public function addNewRemind($idUserPlant, $idAction, $date, $type) {
+    	
+
+    	
+    	$correct_date = substr($date, 1, -1);
+		$correct_type = substr($type, 1, -1);
+    	$stmt = $this->conn->prepare("INSERT INTO remind (idUserPlant, idAction, date, type) VALUES(?,?,?,?)");
+    	$stmt->bind_param("iiss", $idUserPlant, $idAction, $correct_date, $correct_type);
+    	$result = $stmt->execute();
+    	$stmt->close();
+    
+    	if ($result) {
+    		// plant created successfully
+    		return $this->conn->insert_id;
+    	}
+    	else {
+    		// plant failed to create
+    		return NULL;
+    	}
     }
     /**
      * Creating new user plant
@@ -339,22 +419,59 @@ class DbHandler {
         $stmt->close();
         return $num_affected_rows > 0;
     }
+    
+    /**
+     * Updating remind date
+     * @param String $task_id id of the task
+     * @param String $task task text
+     * @param String $status task status
+     */
+    public function updateRemind($idRemind, $date) {
+    	$stmt = $this->conn->prepare("UPDATE remind set date = ? WHERE idRemind = ?");
+    	$stmt->bind_param("si", $date, $idRemind);
+    	$stmt->execute();
+    	$num_affected_rows = $stmt->affected_rows;
+    	$stmt->close();
+    	return $num_affected_rows > 0;
+    }
+    /**
+     * Updating location
+     */
+    public function updateLocation($idUserPlant, $location) {
+    	$stmt = $this->conn->prepare("UPDATE user_plants set location = ? WHERE idUserPlant = ?");
+    	$stmt->bind_param("si", $location, $idUserPlant);
+    	$stmt->execute();
+    	$num_affected_rows = $stmt->affected_rows;
+    	$stmt->close();
+    	return $num_affected_rows > 0;
+    }
     /**
      * Updating imageAdress
      * @param String $imageAdress name of the image
      * @param String $user_id 
      * @param String $plant_id
      */
-    public function updatePlantImage($imageAdress, $user_id, $plant_id) {
-    	$stmt = $this->conn->prepare("UPDATE user_plants set imageAdress = ? WHERE idUser = ? AND idPlant = ?");
-    	$stmt->bind_param("sii", $imageAdress, $user_id, $plant_id);
+    public function updatePlantImage($imageAdress, $user_id) {
+    	$stmt = $this->conn->prepare("UPDATE user_plants set imageAdress = ? WHERE idUserPlant = ?");
+    	$stmt->bind_param("si", $imageAdress, $user_id);
     	$stmt->execute();
     	$num_affected_rows = $stmt->affected_rows;
     	$stmt->close();
     	return $num_affected_rows > 0;
     }
     
- 
+    /**
+     * Deleting a task
+     * @param String $id id of the task to delete
+     */
+    public function deleteRemind($id) {
+    	$stmt = $this->conn->prepare("DELETE FROM remind WHERE idRemind = ?");
+    	$stmt->bind_param("i", $id);
+    	$stmt->execute();
+    	$num_affected_rows = $stmt->affected_rows;
+    	$stmt->close();
+    	return $num_affected_rows > 0;
+    }
     /**
      * Deleting a task
      * @param String $task_id id of the task to delete
@@ -366,6 +483,18 @@ class DbHandler {
         $num_affected_rows = $stmt->affected_rows;
         $stmt->close();
         return $num_affected_rows > 0;
+    }
+    /**
+     * Deleting a task
+     * @param String $task_id id of the task to delete
+     */
+    public function deleteUserPlant($plant_id) {
+    	$stmt = $this->conn->prepare("DELETE FROM user_plants WHERE idUserPlant = ?");
+    	$stmt->bind_param("i", $plant_id);
+    	$stmt->execute();
+    	$num_affected_rows = $stmt->affected_rows;
+    	$stmt->close();
+    	return $num_affected_rows > 0;
     }
  
     /* ------------- `user_tasks` table method ------------------ */

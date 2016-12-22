@@ -1065,7 +1065,14 @@ class Slim
     {
         $this->response->headers->set('Content-Type', $type);
     }
-
+    public function charset($type)
+    {
+    	$this->response->headers->set('Accept-Charset', $type);
+    }
+public function language($type)
+    {
+    	$this->response->headers->set('Accept-Language', $type);
+    }
     /**
      * Set the HTTP response status code
      * @param  int      $code     The HTTP response status code
